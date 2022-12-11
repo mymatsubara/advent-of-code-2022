@@ -1,4 +1,4 @@
-use std::{fs, str, time::Instant};
+use std::{fs, time::Instant};
 
 fn part_one(input: &[String]) -> String {
     "NOT IMPLEMENTED".to_owned()
@@ -18,14 +18,14 @@ mod test {
     fn test_part_one() {
         let input = parse_input(true);
         let result = part_one(&input);
-        assert_eq!(result, "7");
+        assert_eq!(result, "NOT IMPLEMENTED");
     }
 
     #[test]
     fn test_part_two() {
         let input = parse_input(true);
         let result = part_two(&input);
-        assert_eq!(result, "19");
+        assert_eq!(result, "NOT IMPLEMENTED");
     }
 }
 

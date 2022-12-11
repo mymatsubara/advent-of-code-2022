@@ -17,6 +17,7 @@ if [ $(cargo new $DAY_PROJECT) ]; then
     echo "Failed to create project: '$DAY_PROJECT'"
 else
     cp template/src/* $DAY_PROJECT/src/.
+    touch $DAY_PROJECT/README.md
     echo "  ✅ Project '$DAY_PROJECT' successfully created"
 fi
 
