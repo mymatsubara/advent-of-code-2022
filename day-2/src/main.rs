@@ -1,20 +1,37 @@
-use std::fs;
+use std::{fs, time::Instant};
 
-fn main() {
-    let (part_one_matches, part_two_matches) = parse_input();
-
-    let part_one = part_one_matches
+fn part_one(input: &[String]) -> String {
+    input
         .iter()
-        .map(|it| it.get_points())
-        .sum::<u32>();
+        .map(|line| {
+            let shapes: Vec<&str> = line.split(' ').collect();
+            let (opponent_symbol, my_symbol) = (shapes[0], shapes[1]);
 
-    let part_two = part_two_matches
+            Match {
+                opponent_shape: map_opponent_shape(opponent_symbol),
+                my_shape: map_my_shape(my_symbol),
+            }
+        })
+        .map(|_match| _match.get_points())
+        .sum::<u32>()
+        .to_string()
+}
+
+fn part_two(input: &[String]) -> String {
+    input
         .iter()
-        .map(|it| it.get_points())
-        .sum::<u32>();
+        .map(|line| {
+            let shapes: Vec<&str> = line.split(' ').collect();
+            let (opponent_symbol, my_symbol) = (shapes[0], shapes[1]);
 
-    println!("Part one: {}", part_one);
-    println!("Part two: {}", part_two);
+            let opponent_shape = map_opponent_shape(opponent_symbol);
+            let match_result = map_my_match_result(my_symbol);
+
+            Match::force_result(match_result, opponent_shape)
+        })
+        .map(|_match| _match.get_points())
+        .sum::<u32>()
+        .to_string()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -111,36 +128,50 @@ fn map_my_match_result(symbol: &str) -> MatchResult {
     }
 }
 
-fn parse_input() -> (Vec<Match>, Vec<Match>) {
-    let input = fs::read_to_string("input.txt").expect("input.txt file not found");
+// --- TESTS ---
 
-    let lines: Vec<&str> = input.lines().collect();
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    let part_one_matches: Vec<Match> = lines
-        .iter()
-        .map(|line| {
-            let shapes: Vec<&str> = line.split(' ').collect();
-            let (opponent_symbol, my_symbol) = (shapes[0], shapes[1]);
+    #[test]
+    fn test_part_one() {
+        let input = parse_input(true);
+        let result = part_one(&input);
+        assert_eq!(result, "15");
+    }
 
-            Match {
-                opponent_shape: map_opponent_shape(opponent_symbol),
-                my_shape: map_my_shape(my_symbol),
-            }
-        })
-        .collect();
+    #[test]
+    fn test_part_two() {
+        let input = parse_input(true);
+        let result = part_two(&input);
+        assert_eq!(result, "12");
+    }
+}
 
-    let part_two_matches: Vec<Match> = lines
-        .iter()
-        .map(|line| {
-            let shapes: Vec<&str> = line.split(' ').collect();
-            let (opponent_symbol, my_symbol) = (shapes[0], shapes[1]);
+// --- Lines bellow do not need to be modified ---
 
-            let opponent_shape = map_opponent_shape(opponent_symbol);
-            let match_result = map_my_match_result(my_symbol);
+fn main() {
+    let input = parse_input(false);
 
-            Match::force_result(match_result, opponent_shape)
-        })
-        .collect();
+    let start_one = Instant::now();
+    let result_one = part_one(&input);
+    let elapsed_one = start_one.elapsed();
 
-    (part_one_matches, part_two_matches)
+    let start_two = Instant::now();
+    let result_two = part_two(&input);
+    let elapsed_two = start_two.elapsed();
+
+    println!("Part one result: {result_one} [time: {:.2?}]", elapsed_one);
+    println!("Part two result: {result_two} [time: {:.2?}]", elapsed_two);
+}
+
+fn parse_input(test: bool) -> Vec<String> {
+    let file = if test { "input.test.txt" } else { "input.txt" };
+
+    fs::read_to_string(file)
+        .unwrap_or_else(|_| panic!("'{file}' not found"))
+        .lines()
+        .map(|line| line.to_owned())
+        .collect()
 }
