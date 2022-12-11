@@ -1,33 +1,11 @@
 use std::{fs, str, time::Instant};
 
 fn part_one(input: &[String]) -> String {
-    let (_, result) = distinct_window(input.first().unwrap(), 4);
-    result.to_string()
+    "NOT IMPLEMENTED".to_owned()
 }
 
 fn part_two(input: &[String]) -> String {
-    let (_, result) = distinct_window(input.first().unwrap(), 14);
-    result.to_string()
-}
-
-fn distinct_window(string: &str, size: usize) -> (&str, usize) {
-    let datastream = string.as_bytes();
-
-    let mut start = 0;
-    let mut window = &datastream[start..0];
-
-    for end in 1..datastream.len() {
-        if let Some(i) = window.iter().position(|c| c == &datastream[end]) {
-            start += i + 1;
-        };
-
-        window = &datastream[start..end + 1];
-        if window.len() == size {
-            return (str::from_utf8(window).unwrap(), end + 1);
-        }
-    }
-
-    (str::from_utf8(window).unwrap(), datastream.len())
+    "NOT IMPLEMENTED".to_owned()
 }
 
 // --- TESTS ---
