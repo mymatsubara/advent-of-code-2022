@@ -1,14 +1,36 @@
-use std::{fs, time::Instant, cell::RefCell, rc::Rc};
+use std::{fs, time::Instant, cell::RefCell, rc::Rc, fmt::{self, Formatter, Error}};
 
 fn part_one(input: &[String]) -> String {
     let fs = parse_fs(input);
-    const max_size: i32 = 100000;
+    const MAX_SIZE: usize = 100000;
 
-    "".to_owned()
+    let mut solution = 0usize;
+    fs.root.borrow().foreach_child(&mut |child| {
+        let size = child.size();
+        if size < MAX_SIZE { solution += size }
+    });
+
+    solution.to_string()
 }
 
 fn part_two(input: &[String]) -> String {
-    "NOT IMPLEMENTED".to_owned()
+    let fs = parse_fs(input);
+    let unused_space_required = 40000000;
+
+    let total_size = fs.root.borrow().size();
+    let min_size = total_size - unused_space_required;
+     
+    let mut solution = total_size;
+    let mut sizes = Vec::new();
+    fs.root.borrow().foreach_child(&mut |child| {
+        let size = child.size();
+        sizes.push(size);
+        if size > min_size && size < solution {
+            solution = size;
+        }
+    });
+
+    solution.to_string()
 }
 
 fn parse_fs(input: &[String]) -> Filesystem {
@@ -41,8 +63,8 @@ impl Filesystem {
     fn new() -> Self {
         let root = Rc::new(RefCell::new(Directory::new("/".to_owned(), None)));
         Filesystem {
+            cur_dir: root.clone(),
             root,
-            cur_dir: root
         }
     }
 
@@ -111,6 +133,7 @@ impl Command {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct File {
     name: String,
     size: usize,
@@ -124,7 +147,6 @@ impl Sizeable for File {
 
 type DirectoryRef = Rc<RefCell<Directory>>;
 
-#[derive(Debug)]
 struct Directory {
     name: String,
     files: Vec<File>,
@@ -147,6 +169,24 @@ impl Directory {
             files: vec![],
             dirs: vec![],
         }
+    }
+
+    fn foreach_child<F: FnMut(&Directory)>(&self, f: &mut F) {
+        for child in &self.dirs {
+            f(&child.borrow());
+            child.borrow().foreach_child(f);
+        }
+    }
+}
+
+impl fmt::Debug for Directory {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
+        fmt.debug_struct("Directory")
+            .field("name", &self.name)
+            .field("files", &self.files)
+            .field("dirs", &self.dirs);
+
+        Ok(())
     }
 }
 
@@ -171,7 +211,7 @@ mod test {
     fn test_part_two() {
         let input = parse_input(true);
         let result = part_two(&input);
-        assert_eq!(result, "NOT IMPLEMENTED");
+        assert_eq!(result, "24933642");
     }
 }
 
