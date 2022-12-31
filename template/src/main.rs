@@ -52,6 +52,6 @@ fn parse_input(test: bool) -> Vec<String> {
     fs::read_to_string(file)
         .unwrap_or_else(|_| panic!("'{file}' not found"))
         .lines()
-        .map(|line| line.to_owned())
+        .map(|line| line.trim().to_owned())
         .collect()
 }
