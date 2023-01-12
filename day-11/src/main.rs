@@ -6,7 +6,7 @@ use std::{
 
 fn part_one(input: &[String]) -> String {
     const ROUNDS: u8 = 20;
-    const RELIEF_FACTOR: i32 = 3;
+    const RELIEF_FACTOR: Item = 3;
     let mut monkey_group = MonkeyGroup::parse(input, RELIEF_FACTOR);
 
     for _ in 0..ROUNDS {
@@ -17,18 +17,29 @@ fn part_one(input: &[String]) -> String {
 }
 
 fn part_two(input: &[String]) -> String {
-    "WRONG".to_string()
+    const ROUNDS: u16 = 10_000;
+    const RELIEF_FACTOR: Item = 1;
+    let mut monkey_group = MonkeyGroup::parse(input, RELIEF_FACTOR);
+
+    for _ in 0..ROUNDS {
+        monkey_group.exec_round();
+    }
+
+    monkey_group.monkey_business().to_string()
 }
+
+type Item = u64;
 
 #[derive(Debug)]
 struct MonkeyGroup {
     monkeys: Vec<Monkey>,
     inspections: Vec<u32>,
-    relief_factor: i32,
+    relief_factor: Item,
+    divisor_product: Item,
 }
 
 impl MonkeyGroup {
-    fn parse(input: &[String], relief_factor: i32) -> Self {
+    fn parse(input: &[String], relief_factor: Item) -> Self {
         let monkeys: Vec<Monkey> = input
             .chunks(7)
             .map(|monkey_lines| Monkey::parse(monkey_lines).expect("invalid monkey input"))
@@ -36,6 +47,7 @@ impl MonkeyGroup {
 
         Self {
             inspections: vec![0; monkeys.len()],
+            divisor_product: monkeys.iter().map(|m| m.divisor).product(),
             monkeys,
             relief_factor,
         }
@@ -51,7 +63,8 @@ impl MonkeyGroup {
                 let monkey = &monkeys[i];
                 let item = monkey.items[j];
 
-                let item = (monkey.operation)(item) / self.relief_factor;
+                // Bless fasterthanli 🙏 (https://fasterthanli.me/series/advent-of-code-2022/part-11#math-check)
+                let item = ((monkey.operation)(item) / self.relief_factor) % self.divisor_product;
                 let throw_to = (monkey.throw_to)(item);
                 monkeys[throw_to].items.push(item);
             }
@@ -70,9 +83,10 @@ impl MonkeyGroup {
 }
 
 struct Monkey {
-    items: Vec<i32>,
-    operation: Box<dyn Fn(i32) -> i32>,
-    throw_to: Box<dyn Fn(i32) -> usize>,
+    items: Vec<Item>,
+    operation: Box<dyn Fn(Item) -> Item>,
+    throw_to: Box<dyn Fn(Item) -> usize>,
+    divisor: Item,
 }
 
 impl fmt::Debug for Monkey {
@@ -85,7 +99,7 @@ impl fmt::Debug for Monkey {
 
 impl Monkey {
     fn parse(lines: &[String]) -> Option<Self> {
-        let items: Vec<i32> = lines
+        let items: Vec<Item> = lines
             .get(1)?
             .trim()
             .trim_start_matches("Starting items: ")
@@ -98,19 +112,19 @@ impl Monkey {
             .trim()
             .trim_start_matches("Operation: new = old ")
             .split_once(' ')?;
-        let operation: Box<dyn Fn(i32) -> i32> = match operation_str {
-            "+" => match value.parse::<i32>() {
+        let operation: Box<dyn Fn(Item) -> Item> = match operation_str {
+            "+" => match value.parse::<Item>() {
                 Ok(value) => Box::new(move |n| n + value),
                 Err(_) => Box::new(|n| n + n),
             },
-            "*" => match value.parse::<i32>() {
+            "*" => match value.parse::<Item>() {
                 Ok(value) => Box::new(move |n| n * value),
                 Err(_) => Box::new(|n| n * n),
             },
             operation => panic!("Invalid operation: {operation}"),
         };
 
-        let divisible_by: i32 = lines
+        let divisor: Item = lines
             .get(3)?
             .trim()
             .trim_start_matches("Test: divisible by ")
@@ -130,7 +144,7 @@ impl Monkey {
             .ok()?;
 
         let next_monkey = Box::new(move |n| {
-            if n % divisible_by == 0 {
+            if n % divisor == 0 {
                 true_branch
             } else {
                 false_branch
@@ -141,6 +155,7 @@ impl Monkey {
             items,
             throw_to: next_monkey,
             operation,
+            divisor,
         })
     }
 }
