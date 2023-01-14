@@ -11,23 +11,42 @@ fn part_one(input: &[String]) -> String {
 
     climb.calc_costs();
 
-    climb
-        .costs
-        .get(climb.end)
-        .unwrap()
-        .expect("should have reached the end")
-        .to_string()
+    climb.costs.get(climb.end).unwrap().to_string()
 }
 
 fn part_two(input: &[String]) -> String {
-    "NOT IMPLEMENTED".to_owned()
+    const MAX_CLIMB: u8 = 1;
+    let mut climb = Climb::parse(input, MAX_CLIMB).unwrap();
+    let possible_starts: Vec<Point> = climb
+        .heights
+        .iter_coords()
+        .filter(|p| *climb.heights.get(*p).unwrap() == 0)
+        .filter(|p| {
+            climb
+                .heights
+                .neightboors(*p)
+                .any(|n| *climb.heights.get(n).unwrap() == 1)
+        })
+        .collect();
+
+    let result = possible_starts
+        .iter()
+        .filter_map(|&start| {
+            climb.start = start;
+            climb.calc_costs()
+        })
+        .min()
+        .unwrap();
+
+    // result.to_string()
+    result.to_string()
 }
 
 struct Climb {
     heights: Grid<u8>,
     start: Point,
     end: Point,
-    costs: Grid<Option<u16>>,
+    costs: Grid<u16>,
     max_climb: u8,
 }
 
@@ -36,20 +55,12 @@ struct Grid<T> {
     width: usize,
     height: usize,
     vec: Vec<T>,
+    default: T,
 }
 #[derive(Debug, Copy, Clone, Default)]
 struct Point {
     x: usize,
     y: usize,
-}
-
-impl Point {
-    fn checked_sub(self, rhs: Self) -> Option<Self> {
-        Some(Self {
-            x: self.x.checked_sub(rhs.x)?,
-            y: self.y.checked_sub(rhs.y)?,
-        })
-    }
 }
 
 impl Add for Point {
@@ -81,12 +92,91 @@ impl<T: fmt::Debug> Display for Grid<T> {
     }
 }
 
+enum Direction {
+    Right,
+    Left,
+    Up,
+    Down,
+    None,
+}
+
+struct NeightboorIter {
+    height: usize,
+    width: usize,
+    point: Point,
+    direction: Direction,
+}
+
+impl NeightboorIter {
+    fn new<T>(grid: &Grid<T>, point: Point) -> Self {
+        Self {
+            height: grid.height,
+            width: grid.width,
+            direction: Direction::Right,
+            point,
+        }
+    }
+}
+
+impl Iterator for NeightboorIter {
+    type Item = Point;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Point { x, y } = self.point;
+
+        loop {
+            match self.direction {
+                Direction::Right => {
+                    self.direction = Direction::Left;
+                    if x >= self.width - 1 {
+                        continue;
+                    } else {
+                        return Some(Point { x: x + 1, y });
+                    }
+                }
+                Direction::Left => {
+                    self.direction = Direction::Up;
+                    if x == 0 {
+                        continue;
+                    } else {
+                        return Some(Point { x: x - 1, y });
+                    }
+                }
+                Direction::Up => {
+                    self.direction = Direction::Down;
+                    if y == 0 {
+                        continue;
+                    } else {
+                        return Some(Point { x, y: y - 1 });
+                    }
+                }
+                Direction::Down => {
+                    self.direction = Direction::None;
+                    if y >= self.height - 1 {
+                        continue;
+                    } else {
+                        return Some(Point { x, y: y + 1 });
+                    }
+                }
+                Direction::None => {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
 impl<T: Default + Copy> Grid<T> {
     fn new(width: usize, height: usize) -> Self {
+        Self::new_with_default(width, height, Default::default())
+    }
+
+    fn new_with_default(width: usize, height: usize, default: T) -> Self {
         Self {
             width,
             height,
-            vec: vec![Default::default(); width * height],
+            vec: vec![default; width * height],
+            default,
         }
     }
 
@@ -109,12 +199,24 @@ impl<T: Default + Copy> Grid<T> {
             None
         }
     }
+
+    fn neightboors(&self, p: Point) -> NeightboorIter {
+        NeightboorIter::new(self, p)
+    }
+
+    fn iter_coords(&self) -> impl Iterator<Item = Point> + '_ {
+        (0..self.height).flat_map(|y| (0..self.width).map(move |x| Point { x, y }))
+    }
+
+    fn clear(&mut self) {
+        self.vec = vec![self.default; self.width * self.height];
+    }
 }
 
 impl Climb {
     fn new(grid: Grid<u8>, start: Point, end: Point, max_step: u8) -> Self {
         Self {
-            costs: Grid::new(grid.width, grid.height),
+            costs: Grid::new_with_default(grid.width, grid.height, u16::MAX),
             max_climb: max_step,
             heights: grid,
             start,
@@ -151,20 +253,23 @@ impl Climb {
         Some(Climb::new(grid, start, end, max_step))
     }
 
-    fn calc_costs(&mut self) {
+    fn calc_costs(&mut self) -> Option<u16> {
+        self.costs.clear();
+
         self.visit_neightboors_rec(0, self.start);
+
+        self.costs.get(self.end).copied()
     }
 
     fn visit_neightboors_rec(&mut self, cost: u16, p: Point) {
         match self.costs.get_mut(p) {
-            Some(Some(old_cost)) => {
+            Some(old_cost) => {
                 if cost >= *old_cost {
                     return;
                 } else {
                     *old_cost = cost;
                 }
             }
-            Some(old_cost) => *old_cost = Some(cost),
             None => return,
         };
 
@@ -172,32 +277,7 @@ impl Climb {
         let cur_height = self.heights.get(p).unwrap();
         let height_threshold = cur_height + self.max_climb;
 
-        // Try to visit bottom neightboor
-        let neightboor = p + Point { x: 0, y: 1 };
-        if let Some(neightboor_height) = self.heights.get(neightboor) {
-            if *neightboor_height <= height_threshold {
-                self.visit_neightboors_rec(neightboor_cost, neightboor)
-            }
-        }
-
-        // Try to visit right neightboor
-        let neightboor = p + Point { x: 1, y: 0 };
-        if let Some(neightboor_height) = self.heights.get(neightboor) {
-            if *neightboor_height <= height_threshold {
-                self.visit_neightboors_rec(neightboor_cost, neightboor)
-            }
-        }
-
-        // Try to visit top neightboor
-        if let Some(neightboor) = p.checked_sub(Point { x: 0, y: 1 }) {
-            let neightboor_height = self.heights.get(neightboor).unwrap();
-            if *neightboor_height <= height_threshold {
-                self.visit_neightboors_rec(neightboor_cost, neightboor)
-            }
-        }
-
-        // Try to visit left neightboor
-        if let Some(neightboor) = p.checked_sub(Point { x: 1, y: 0 }) {
+        for neightboor in self.heights.neightboors(p) {
             let neightboor_height = self.heights.get(neightboor).unwrap();
             if *neightboor_height <= height_threshold {
                 self.visit_neightboors_rec(neightboor_cost, neightboor)
@@ -223,7 +303,7 @@ mod test {
     fn test_part_two() {
         let input = parse_input(true);
         let result = part_two(&input);
-        assert_eq!(result, "NOT IMPLEMENTED");
+        assert_eq!(result, "29");
     }
 }
 
