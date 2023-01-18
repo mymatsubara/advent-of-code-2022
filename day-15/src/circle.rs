@@ -1,5 +1,6 @@
 use crate::point::Point;
 
+#[derive(Clone, Copy)]
 pub struct Circle {
     pub center: Point,
     pub radius: usize,
