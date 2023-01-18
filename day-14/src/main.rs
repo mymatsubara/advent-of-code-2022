@@ -27,7 +27,7 @@ fn part_one(input: &[String]) -> String {
         }
     }
 
-    println!("{}", cave.grid);
+    // println!("{}", cave.grid);
 
     cave.grid
         .iter()
@@ -55,7 +55,7 @@ fn part_two(input: &[String]) -> String {
         }
     }
 
-    println!("{}", cave.grid);
+    // println!("{}", cave.grid);
 
     cave.grid
         .iter()
