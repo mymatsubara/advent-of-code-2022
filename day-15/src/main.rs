@@ -1,58 +1,22 @@
-use std::{
-    cmp::{max, min},
-    collections::HashSet,
-    fs,
-    time::Instant,
-};
+use itertools::Itertools;
+use std::{collections::HashSet, fs, ops::RangeInclusive, time::Instant};
 
-use day_15::{circle::Circle, point::Point};
+use day_15::{circle::Circle, clamp::Clamp, point::Point};
 
-fn part_one(input: &[String], row: i32) -> String {
+fn part_one(input: &[String], y: i32) -> String {
     let sensor_beacons: Vec<_> = input.iter().map(|line| SensorBeacon::parse(line)).collect();
-    let circles: Vec<_> = sensor_beacons.iter().map(|pair| pair.circle()).collect();
+    let map = Map::new(sensor_beacons);
 
-    let (mut max_x, mut min_x) = (i32::MIN, i32::MAX);
-    for SensorBeacon { beacon, .. } in sensor_beacons.iter() {
-        max_x = max(beacon.x, max_x);
-        min_x = min(beacon.x, min_x);
-    }
-
-    let mut result = (min_x..=max_x)
-        .map(|x| Point { x, y: row })
-        .filter(|point| circles.iter().any(move |circle| circle.contains(*point)))
-        .count();
-
-    let points = sensor_beacons
-        .iter()
-        .flat_map(|pair| [pair.beacon, pair.sensor])
-        .collect::<HashSet<_>>();
-
-    result -= points.iter().filter(|point| point.y == row).count();
-
-    result.to_string()
+    map.non_beacon_places(y).to_string()
 }
 
 fn part_two(input: &[String], max: Point) -> String {
     let sensor_beacons: Vec<_> = input.iter().map(|line| SensorBeacon::parse(line)).collect();
-    let circles: Vec<_> = sensor_beacons.iter().map(|pair| pair.circle()).collect();
+    let map = Map::new(sensor_beacons);
 
-    let (y, distress_beacon_range) = (0..max.y)
-        .map(|y| {
-            Range::merge(
-                circles
-                    .iter()
-                    .filter_map(|circle| intersect(*circle, y))
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .enumerate()
-        .find(|(_, ranges)| ranges.len() > 1)
-        .expect("should find distress beacon range");
-
-    let distress_beacon = Point {
-        x: distress_beacon_range.first().unwrap().end + 1,
-        y: y as i32,
-    };
+    let distress_beacon = map
+        .find_distress_beacon(0..=max.x, 0..=max.y)
+        .expect("should find distress beacon");
 
     let distress_signal: isize =
         (4_000_000 * distress_beacon.x as isize) + distress_beacon.y as isize;
@@ -60,15 +24,104 @@ fn part_two(input: &[String], max: Point) -> String {
     distress_signal.to_string()
 }
 
-#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Debug)]
-struct Range {
-    start: i32,
-    end: i32,
+struct Map {
+    circles: Vec<Circle>,
+    sensor_beacons: Vec<SensorBeacon>,
 }
 
 struct SensorBeacon {
     sensor: Point,
     beacon: Point,
+}
+
+impl Map {
+    fn new(sensor_beacons: Vec<SensorBeacon>) -> Self {
+        let circles: Vec<_> = sensor_beacons.iter().map(|pair| pair.circle()).collect();
+
+        Self {
+            circles,
+            sensor_beacons,
+        }
+    }
+
+    fn sensors_coverage(&self, y: i32) -> impl Iterator<Item = RangeInclusive<i32>> {
+        // For each circle get the intersection range
+        let ranges = self
+            .circles
+            .iter()
+            .filter_map(move |circle| {
+                let center = circle.center;
+                let dy = center.y.abs_diff(y);
+
+                // Check if circle intersect y line
+                if dy > circle.radius {
+                    return None;
+                }
+
+                let dx = circle.radius - dy;
+                Some(center.x - dx as i32..=center.x + dx as i32)
+            })
+            .sorted_by_key(|range| *range.start());
+
+        // Merge the intersection ranges
+        ranges.coalesce(|r1, r2| {
+            if *r1.end() + 1 >= *r2.start() {
+                if r2.end() > r1.end() {
+                    Ok(*r1.start()..=*r2.end())
+                } else {
+                    Ok(r1)
+                }
+            } else {
+                Err((r1, r2))
+            }
+        })
+    }
+
+    fn non_beacon_places(&self, y: i32) -> usize {
+        let beacons: HashSet<_> = self
+            .sensor_beacons
+            .iter()
+            .map(|pair| pair.beacon)
+            .filter_map(|beacon| if beacon.y == y { Some(beacon.x) } else { None })
+            .collect();
+
+        self.sensors_coverage(y)
+            .map(|range| {
+                let size = range.end() - range.start() + 1;
+                let beacons_in_range = beacons
+                    .iter()
+                    .filter(|beacon| range.contains(beacon))
+                    .count();
+
+                size as usize - beacons_in_range
+            })
+            .sum()
+    }
+
+    fn find_distress_beacon(
+        &self,
+        x_range: RangeInclusive<i32>,
+        y_range: RangeInclusive<i32>,
+    ) -> Option<Point> {
+        y_range
+            .filter_map(|y| {
+                self.sensors_coverage(y)
+                    .filter_map(|range| {
+                        let clamped = range.clamp(&x_range);
+                        if clamped.start() <= clamped.end() {
+                            Some(clamped)
+                        } else {
+                            None
+                        }
+                    })
+                    .nth(1)
+                    .map(|range| Point {
+                        x: range.start() - 1,
+                        y,
+                    })
+            })
+            .next()
+    }
 }
 
 impl SensorBeacon {
@@ -106,65 +159,6 @@ impl SensorBeacon {
     }
 }
 
-impl Range {
-    fn new(start: i32, end: i32) -> Option<Self> {
-        if start > end {
-            return None;
-        }
-
-        Some(Self { start, end })
-    }
-
-    fn merge(mut ranges: Vec<Self>) -> Vec<Self> {
-        ranges.sort();
-
-        if ranges.len() == 0 {
-            return vec![];
-        }
-
-        let mut result = Vec::with_capacity(ranges.len());
-        result.push(ranges.first().copied().unwrap());
-
-        for range in ranges.iter().skip(1) {
-            let cur = result.last_mut().unwrap();
-            match range.merge_with(cur) {
-                Some(merged) => *cur = merged,
-                None => result.push(*range),
-            };
-        }
-
-        result
-    }
-
-    fn merge_with(&self, other: &Self) -> Option<Self> {
-        if self.intersect(other) {
-            return Some(Self {
-                start: min(self.start, other.start),
-                end: max(self.end, other.end),
-            });
-        }
-
-        None
-    }
-
-    fn intersect(&self, other: &Self) -> bool {
-        (other.start..=other.end).contains(&self.start)
-            || (self.start..=self.end).contains(&other.start)
-    }
-}
-
-fn intersect(circle: Circle, y: i32) -> Option<Range> {
-    let center = circle.center;
-    let d_y = (center.y - y).abs() as usize;
-
-    if d_y > circle.radius {
-        return None;
-    }
-
-    let d_x = (circle.radius - d_y) as i32;
-    Range::new(center.x - d_x, center.x + d_x)
-}
-
 // --- TESTS ---
 
 #[cfg(test)]
@@ -186,19 +180,22 @@ mod test {
     }
 
     #[test]
-    fn intersect_circle() {
-        let circle = Circle {
-            center: Point { x: 2, y: 2 },
-            radius: 2,
-        };
+    fn sensor_coverage() {
+        let sensor_beacons = vec![
+            SensorBeacon {
+                sensor: (10, 10).into(),
+                beacon: (10, 8).into(),
+            },
+            SensorBeacon {
+                sensor: (0, 0).into(),
+                beacon: (0, 10).into(),
+            },
+        ];
 
-        assert_eq!(intersect(circle, -1), None);
-        assert_eq!(intersect(circle, 0), Some(Range { start: 2, end: 2 }));
-        assert_eq!(intersect(circle, 1), Some(Range { start: 1, end: 3 }));
-        assert_eq!(intersect(circle, 2), Some(Range { start: 0, end: 4 }));
-        assert_eq!(intersect(circle, 3), Some(Range { start: 1, end: 3 }));
-        assert_eq!(intersect(circle, 4), Some(Range { start: 2, end: 2 }));
-        assert_eq!(intersect(circle, 5), None);
+        let map = Map::new(sensor_beacons);
+        let coverages: Vec<_> = map.sensors_coverage(10).collect();
+
+        assert_eq!(coverages, vec![0..=0, 8..=12]);
     }
 }
 

@@ -49,8 +49,8 @@ impl SubAssign for Point {
 }
 
 impl Point {
-    pub fn manhattan_dist(self, other: Self) -> usize {
-        ((self.x - other.x).abs() + (self.y - other.y).abs()) as _
+    pub fn manhattan_dist(self, other: Self) -> u32 {
+        self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
     }
 
     pub fn signum(self) -> Self {
