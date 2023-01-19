@@ -7,15 +7,23 @@ fn part_one(input: &[String]) -> String {
 
     volcano
         .max_pressure(State {
-            minutes_left: 30,
-            valve_idx: volcano.start_index,
+            minutes_left: (30, 0),
+            valve_idx: (volcano.start_index, volcano.start_index),
             visited: BitSet::new(),
         })
         .to_string()
 }
 
 fn part_two(input: &[String]) -> String {
-    "NOT IMPLEMENTED".to_owned()
+    let volcano = Volcano::parse(input);
+
+    volcano
+        .max_pressure(State {
+            minutes_left: (26, 26),
+            valve_idx: (volcano.start_index, volcano.start_index),
+            visited: BitSet::new(),
+        })
+        .to_string()
 }
 
 #[derive(Debug)]
@@ -34,15 +42,21 @@ struct Volcano {
 
 #[derive(Debug, Copy, Clone)]
 struct State {
-    valve_idx: usize,
+    valve_idx: (usize, usize),
     visited: BitSet,
-    minutes_left: u32,
+    minutes_left: (u32, u32),
 }
 
 impl Volcano {
     fn max_pressure(&self, mut state: State) -> u32 {
-        state.visited.set(state.valve_idx);
-        let cur_valve = self.valves.get(state.valve_idx).unwrap();
+        let (my_minutes_left, elefant_minutes_left) = state.minutes_left;
+        let (my_valve, elefant_valve) = state.valve_idx;
+        let my_turn = my_minutes_left >= elefant_minutes_left;
+
+        let valve_idx = if my_turn { my_valve } else { elefant_valve };
+        let minutes_left = my_minutes_left.max(elefant_minutes_left);
+
+        let cur_valve = self.valves.get(valve_idx).unwrap();
         let mut max_pressure = 0;
 
         // Try to visite all pressurized valves which were not yet visited
@@ -55,17 +69,27 @@ impl Volcano {
             let minutes_spent = cur_valve.distances[next_valve_idx] + 1;
 
             // Go to next valve only if there is minutes left
-            let Some(minutes_left) = state.minutes_left.checked_sub(minutes_spent) else {
+            let Some(minutes_left) = minutes_left.checked_sub(minutes_spent) else {
                 continue;
             };
 
             let flow_rate = self.valves[next_valve_idx].flow_rate;
             let pressure_gain = flow_rate * minutes_left;
 
+            let mut visited = state.visited.clone();
+            visited.set(next_valve_idx);
             let new_state = State {
-                valve_idx: next_valve_idx,
-                visited: state.visited,
-                minutes_left,
+                visited,
+                valve_idx: if my_turn {
+                    (next_valve_idx, elefant_valve)
+                } else {
+                    (my_valve, next_valve_idx)
+                },
+                minutes_left: if my_turn {
+                    (minutes_left, elefant_minutes_left)
+                } else {
+                    (my_minutes_left, minutes_left)
+                },
             };
 
             // Calculate how much pressure we are gonna get taking this branch
@@ -192,7 +216,7 @@ mod test {
     fn test_part_two() {
         let input = parse_input(true);
         let result = part_two(&input);
-        assert_eq!(result, "NOT IMPLEMENTED");
+        assert_eq!(result, "1707");
     }
 }
 
