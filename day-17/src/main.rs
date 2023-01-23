@@ -18,8 +18,8 @@ fn part_one(input: &[String]) -> String {
 /// It is not feasible to simulate the fall of rocks 1_000_000_000_000.
 /// However, we can try to find a fall pattern in which `n` rocks drop will result a increase in height of `y`
 /// If we find such fall pattern, we can calculate part 2 analitically
-///
-/// NOTE: my code is crap and may not work for all inputs lol
+/// 
+/// NOTE: the code bellow is crap, but it works lol
 fn part_two(input: &[String]) -> String {
     let jet_pattern = Direction::parse_jet_pattern(input.first().expect("empty input"));
     let rock_kinds = rock_kinds();
