@@ -1,16 +1,15 @@
 #![feature(drain_filter)]
 use std::{
+    cmp::Ordering,
+    collections::HashMap,
     fs,
-    ops::{Add, AddAssign, Deref, Sub},
+    ops::{Add, AddAssign, Deref, Sub, SubAssign},
     time::Instant,
 };
 
 fn part_one(input: &[String]) -> String {
     const MINUTES: u8 = 24;
-    const INITIAL_STATE: State = State {
-        resources: Values([0, 0, 0, 0]),
-        robots: Values([1, 0, 0, 0]),
-    };
+    const INITIAL_STATE: (Robots, Resources) = (Values([1, 0, 0, 0]), Values([0, 0, 0, 0]));
 
     let best_states: Vec<_> = input
         .iter()
@@ -20,8 +19,8 @@ fn part_one(input: &[String]) -> String {
 
     best_states
         .iter()
-        .map(|(blueprint, state)| {
-            (blueprint.id * state.resources[Resource::Geode as usize] as u8) as usize
+        .map(|(blueprint, resources)| {
+            (blueprint.id * resources[Resource::Geode as usize] as u8) as usize
         })
         .sum::<usize>()
         .to_string()
@@ -41,8 +40,8 @@ enum Resource {
     Geode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Values([i8; RESOURCES_TYPES]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct Values([i16; RESOURCES_TYPES]);
 
 #[derive(Debug, Clone, Copy)]
 struct Blueprint {
@@ -50,11 +49,8 @@ struct Blueprint {
     costs: [Values; RESOURCES_TYPES],
 }
 
-#[derive(Clone, Copy, Debug)]
-struct State {
-    robots: Values,
-    resources: Values,
-}
+type Robots = Values;
+type Resources = Values;
 
 impl Blueprint {
     fn parse(line: &str) -> Blueprint {
@@ -88,63 +84,72 @@ impl Blueprint {
         }
     }
 
-    fn find_best_state(&self, initial_state: State, minutes: u8) -> State {
-        let mut states = vec![initial_state];
+    fn find_best_state(&self, initial_state: (Robots, Resources), minutes: u8) -> Values {
+        let mut best_states: HashMap<Robots, Resources> = HashMap::new();
+        best_states.insert(initial_state.0, initial_state.1);
 
-        for minute in 0..minutes {
-            println!("minutes: {minute}");
-            for i in 0..states.len() {
-                let state = &mut states[i];
-                let resources_gathered = state.robots;
+        for _ in 0..minutes {
+            let mut new_states = Vec::with_capacity(best_states.len() * 5);
 
-                let mut ore_state = *state;
-                let mut other_state = *state;
-                state.resources += resources_gathered;
-
-                if other_state.try_build_robot(Resource::Geode, self)
-                    || other_state.try_build_robot(Resource::Obsidian, self)
-                    || other_state.try_build_robot(Resource::Clay, self)
-                {
-                    other_state.resources += resources_gathered;
-                    states.push(other_state);
+            for (robots, resources) in best_states.iter() {
+                for robot_kind in [
+                    Resource::Geode,
+                    Resource::Obsidian,
+                    Resource::Clay,
+                    Resource::Ore,
+                ] {
+                    if let Some(new_state) =
+                        self.try_build_robot_and_gather(robot_kind, *robots, *resources)
+                    {
+                        new_states.push(new_state);
+                    }
                 }
 
-                if ore_state.try_build_robot(Resource::Ore, self) {
-                    ore_state.resources += resources_gathered;
-                    states.push(ore_state);
-                }
+                // Do not build robot
+                new_states.push((*robots, *resources + *robots))
             }
 
-            // states.drain_filter(|state| state.resources[Resource::Ore as usize] > 20);
+            // Update best states
+            for (robots, resources) in new_states {
+                best_states
+                    .entry(robots)
+                    .and_modify(|best_resouces| {
+                        if resources > *best_resouces {
+                            *best_resouces = resources;
+                        }
+                    })
+                    .or_insert(resources);
+            }
         }
 
-        *states
-            .iter()
-            .max_by_key(|s| s.resources[Resource::Geode as usize])
-            .unwrap()
+        *best_states.values().max().unwrap()
     }
-}
 
-impl State {
-    fn try_build_robot(&mut self, kind: Resource, blueprint: &Blueprint) -> bool {
-        let new_resources = self.resources - blueprint.costs[kind as usize];
+    fn try_build_robot_and_gather(
+        &self,
+        kind: Resource,
+        mut robots: Robots,
+        mut resources: Resources,
+    ) -> Option<(Robots, Resources)> {
+        // Robot cost
+        resources -= self.costs[kind as usize];
 
-        if new_resources.into_iter().any(|r| r < 0) {
-            return false;
+        if resources.into_iter().any(|r| r < 0) {
+            return None;
         }
 
-        // if matches!(kind, Resource::Obsidian) {
-        //     dbg!("hello");
-        // }
+        // Previous robots gains
+        resources += robots;
 
-        self.resources = new_resources;
-        self.robots.0[kind as usize] += 1;
-        true
+        // Add the new robot
+        robots.0[kind as usize] += 1;
+
+        Some((robots, resources))
     }
 }
 
 impl Deref for Values {
-    type Target = [i8; RESOURCES_TYPES];
+    type Target = [i16; RESOURCES_TYPES];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -174,6 +179,34 @@ impl Sub for Values {
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Values(std::array::from_fn(|i| self[i] - rhs[i]))
+    }
+}
+
+impl SubAssign for Values {
+    fn sub_assign(&mut self, rhs: Self) {
+        for i in 0..self.len() {
+            self.0[i] -= rhs.0[i];
+        }
+    }
+}
+
+impl Ord for Values {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd for Values {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(
+            self.0
+                .iter()
+                .zip(other.0.iter())
+                .rev()
+                .map(|(a, b)| a.cmp(b))
+                .find(|c| !matches!(c, Ordering::Equal))
+                .unwrap_or(Ordering::Equal),
+        )
     }
 }
 
@@ -251,6 +284,14 @@ mod test {
     //     assert_eq!(state.resources, Values([3, 2, 3, 0]));
     //     assert_eq!(state.robots, Values([1, 2, 0, 5]));
     // }
+
+    #[test]
+    fn values_ordering() {
+        let v1 = Values([1, 2, 3, 4]);
+        let v2 = Values([4, 3, 2, 1]);
+
+        assert!(v1 > v2);
+    }
 }
 
 // --- Lines bellow do not need to be modified ---
