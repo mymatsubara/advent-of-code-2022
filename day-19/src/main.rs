@@ -20,8 +20,10 @@ fn part_one(input: &[String]) -> String {
 
     best_states
         .iter()
-        .map(|(blueprint, state)| {
-            (blueprint.id * state.resources[Resource::Geode as usize] as u8) as usize
+        .filter_map(|(blueprint, state)| {
+            state.as_ref().map(|state| {
+                (blueprint.id * state.resources[Resource::Geode as usize] as u8) as usize
+            })
         })
         .sum::<usize>()
         .to_string()
@@ -42,12 +44,13 @@ enum Resource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Values([i8; RESOURCES_TYPES]);
+struct Values([i16; RESOURCES_TYPES]);
 
 #[derive(Debug, Clone, Copy)]
 struct Blueprint {
     id: u8,
     costs: [Values; RESOURCES_TYPES],
+    max_costs: Values,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,69 +85,98 @@ impl Blueprint {
             0,
         ]);
 
+        let costs = [ore_cost, clay_cost, obsidian_cost, geode_cost];
+
         Blueprint {
             id: id.parse().expect("invalid blueprint id"),
-            costs: [ore_cost, clay_cost, obsidian_cost, geode_cost],
+            max_costs: Values(std::array::from_fn(|i| {
+                costs.iter().map(|c| c[i]).max().unwrap()
+            })),
+            costs,
         }
     }
 
-    fn find_best_state(&self, initial_state: State, minutes: u8) -> State {
+    fn find_best_state(&self, initial_state: State, minutes: u8) -> Option<State> {
         let mut states = vec![initial_state];
 
         for minute in 0..minutes {
             println!("minutes: {minute}");
-            for i in 0..states.len() {
-                let state = &mut states[i];
-                let resources_gathered = state.robots;
+            let mut new_states = Vec::with_capacity(states.len());
 
-                let mut ore_state = *state;
-                let mut other_state = *state;
-                state.resources += resources_gathered;
-
-                if other_state.try_build_robot(Resource::Geode, self)
-                    || other_state.try_build_robot(Resource::Obsidian, self)
-                    || other_state.try_build_robot(Resource::Clay, self)
+            // Create new possible states
+            for state in states.iter() {
+                // Try to build robots
+                if let Some(new_state) = state.try_build_and_gather(Resource::Geode, self) {
+                    new_states.push(new_state);
+                } else if let Some(new_state) = state.try_build_and_gather(Resource::Obsidian, self)
                 {
-                    other_state.resources += resources_gathered;
-                    states.push(other_state);
+                    new_states.push(new_state);
+                } else {
+                    for robot_kind in [Resource::Clay, Resource::Ore] {
+                        if let Some(new_state) = state.try_build_and_gather(robot_kind, self) {
+                            new_states.push(new_state);
+                        }
+                    }
                 }
 
-                if ore_state.try_build_robot(Resource::Ore, self) {
-                    ore_state.resources += resources_gathered;
-                    states.push(ore_state);
-                }
+                // Do not build robot
+                let mut new_state = *state;
+                new_state.resources += new_state.robots;
+                new_states.push(new_state);
             }
 
-            // states.drain_filter(|state| state.resources[Resource::Ore as usize] > 20);
+            let obsidian_threashold =
+                minutes - self.costs[Resource::Geode as usize][Resource::Obsidian as usize] as u8;
+            let clay_threshold = obsidian_threashold
+                - self.costs[Resource::Obsidian as usize][Resource::Clay as usize] as u8;
+
+            // if minute == obsidian_threashold {
+            //     states = new_states
+            //         .into_iter()
+            //         .filter(|state| state.robots[Resource::Obsidian as usize] > 0)
+            //         .collect()
+            // } else if minute == clay_threshold {
+            //     states = new_states
+            //         .into_iter()
+            //         .filter(|state| state.robots[Resource::Clay as usize] > 0)
+            //         .collect()
+            // } else {
+            //     states = new_states
+            // }
+
+            states = new_states;
         }
 
-        *states
-            .iter()
+        states
+            .into_iter()
             .max_by_key(|s| s.resources[Resource::Geode as usize])
-            .unwrap()
     }
 }
 
 impl State {
-    fn try_build_robot(&mut self, kind: Resource, blueprint: &Blueprint) -> bool {
-        let new_resources = self.resources - blueprint.costs[kind as usize];
+    fn try_build_and_gather(mut self, kind: Resource, blueprint: &Blueprint) -> Option<State> {
+        let kind = kind as usize;
+        self.resources = self.resources - blueprint.costs[kind];
 
-        if new_resources.into_iter().any(|r| r < 0) {
-            return false;
+        if self.resources.into_iter().any(|r| r < 0)
+            || (kind != Resource::Geode as usize
+                && self.robots.0[kind] >= blueprint.max_costs[kind])
+        {
+            return None;
         }
 
-        // if matches!(kind, Resource::Obsidian) {
-        //     dbg!("hello");
-        // }
+        // Gather resources
+        self.resources += self.robots;
 
-        self.resources = new_resources;
-        self.robots.0[kind as usize] += 1;
-        true
+        // Build robot
+        self.robots.0[kind] += 1;
+
+        Some(self)
     }
 }
 
 impl Deref for Values {
-    type Target = [i8; RESOURCES_TYPES];
+    type Target = [i16; RESOURCES_TYPES];
 
     fn deref(&self) -> &Self::Target {
         &self.0
